@@ -3,48 +3,47 @@ import { slot4BrandConfig } from '@/editable/theme/brand.config'
 export const globalContent = {
   site: {
     name: slot4BrandConfig.siteName,
-    tagline: slot4BrandConfig.tagline || 'Independent reading platform',
+    tagline: slot4BrandConfig.tagline || 'Business listing platform',
     domain: slot4BrandConfig.domain,
     baseUrl: slot4BrandConfig.baseUrl,
   },
   nav: {
-    tagline: 'Independent reading platform',
+    tagline: 'Business listing platform',
     primaryLinks: [
-      { label: 'Articles', href: '/articles' },
-      { label: 'Visuals', href: '/image-sharing' },
-      { label: 'Listings', href: '/listings' },
+      { label: 'Articles', href: '/article' },
+      { label: 'Businesses', href: '/listing' },
       { label: 'Contact', href: '/contact' },
     ],
     actions: {
-      primary: { label: 'Start exploring', href: '/' },
-      secondary: { label: 'Submit', href: '/contact' },
+      primary: { label: 'List your business', href: '/create' },
+      secondary: { label: 'Contact us', href: '/contact' },
     },
   },
   footer: {
-    tagline: 'Stories, resources, and discoverable posts',
-    description: 'A connected publishing surface for articles, visuals, listings, profiles, bookmarks, and downloadable resources.',
+    tagline: 'Your trusted business listing platform',
+    description: 'Connecting businesses with customers through verified listings, expert reviews, and local discovery tools. Join thousands of businesses growing their reach.',
     columns: [
       {
         title: 'Explore',
         links: [
-          { label: 'Articles', href: '/articles' },
-          { label: 'Listings', href: '/listings' },
-          { label: 'Images', href: '/image-sharing' },
-          { label: 'PDF Library', href: '/pdf' },
+          { label: 'Business Listings', href: '/listing' },
+          { label: 'Articles & Guides', href: '/article' },
+          { label: 'Marketplace', href: '/classified' },
+          { label: 'Business Gallery', href: '/image' },
         ],
       },
       {
-        title: 'Site',
+        title: 'Company',
         links: [
-          { label: 'About', href: '/about' },
+          { label: 'About Us', href: '/about' },
           { label: 'Contact', href: '/contact' },
         ],
       },
     ],
-    bottomNote: 'Built for clean discovery and connected publishing.',
+    bottomNote: 'Helping businesses grow through better visibility and trusted connections.',
   },
   commonLabels: {
-    readMore: 'Read more',
+    readMore: 'Learn more',
     viewAll: 'View all',
     explore: 'Explore',
     latest: 'Latest',
