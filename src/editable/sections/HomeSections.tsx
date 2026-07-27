@@ -1,14 +1,13 @@
 import Link from 'next/link'
 import {
-  ArrowRight, Bookmark, Building2, Camera, ChevronRight, FileText, Image as ImageIcon,
-  MapPin, Megaphone, MessageSquare, Search, Share2, Star, ThumbsUp, UserRound,
+  ArrowRight, BadgePercent, Building2, Check, ChevronDown,
+  Headphones, Mail, Store, Users,
 } from 'lucide-react'
 import type { SitePost } from '@/lib/site-connector'
 import type { HomeTimeSection } from '@/lib/task-data'
 import type { TaskKey } from '@/lib/site-config'
 import { SITE_CONFIG } from '@/lib/site-config'
-import { pagesContent } from '@/editable/content/pages.content'
-import { getEditablePostImage, postHref, toPlainText } from '@/editable/cards/PostCards'
+import { getEditableCategory, getEditableExcerpt, getEditablePostImage, postHref } from '@/editable/cards/PostCards'
 import { EditableHeroCollage } from '@/editable/sections/EditableHeroCollage'
 
 type HomeSectionProps = {
@@ -18,215 +17,149 @@ type HomeSectionProps = {
   timeSections: HomeTimeSection[]
 }
 
-const taskIcon: Record<TaskKey, typeof FileText> = {
-  article: FileText,
-  listing: Building2,
-  classified: Megaphone,
-  image: ImageIcon,
-  sbm: Bookmark,
-  pdf: FileText,
-  profile: UserRound,
+type StoryCard = {
+  title: string
+  text: string
+  name: string
+  post?: SitePost
 }
 
-function taskLabel(task: TaskKey) {
-  return SITE_CONFIG.tasks.find((item) => item.key === task)?.label || task
-}
+const container = 'mx-auto w-full max-w-[1280px] px-5 sm:px-8 lg:px-12'
 
-function getExcerpt(post?: SitePost | null, limit = 130) {
-  const content = post?.content && typeof post.content === 'object' ? (post.content as Record<string, unknown>) : {}
-  const raw =
-    (typeof content.description === 'string' && content.description) ||
-    (typeof content.summary === 'string' && content.summary) ||
-    (typeof post?.summary === 'string' && post.summary) ||
-    (typeof content.body === 'string' && content.body) ||
-    (typeof content.excerpt === 'string' && content.excerpt) ||
-    ''
-  const clean = toPlainText(raw)
-  return clean.length > limit ? `${clean.slice(0, limit).trim()}...` : clean
-}
-
-function categoryOf(post?: SitePost | null) {
-  const content = post?.content && typeof post.content === 'object' ? (post.content as Record<string, unknown>) : {}
-  return (typeof content.category === 'string' && content.category) || post?.tags?.[0] || ''
-}
-
-// Stable hash so derived ratings/counts stay consistent between renders.
-function hashStr(value: string) {
-  let h = 0
-  for (let i = 0; i < value.length; i += 1) h = (h * 31 + value.charCodeAt(i)) >>> 0
-  return h
-}
-
-// Prefer real rating/review data when present, else a stable display value so
-// the Yelp-style star UI always reads well. (Wire to real fields when ready.)
-function ratingOf(post: SitePost) {
-  const content = post?.content && typeof post.content === 'object' ? (post.content as Record<string, unknown>) : {}
-  const real = Number(content.rating)
-  if (real >= 1 && real <= 5) return Math.round(real * 10) / 10
-  const h = hashStr(post.slug || post.id || post.title || 'x')
-  return Math.round((3.7 + (h % 13) / 10) * 10) / 10 // 3.7 – 4.9
-}
-
-function reviewsOf(post: SitePost) {
-  const content = post?.content && typeof post.content === 'object' ? (post.content as Record<string, unknown>) : {}
-  const real = Number(content.reviewCount ?? content.reviews)
-  if (real > 0) return Math.floor(real)
-  return 6 + (hashStr((post.slug || post.title || 'x') + 'r') % 480)
-}
-
-function Stars({ rating, className = 'h-4 w-4' }: { rating: number; className?: string }) {
-  const rounded = Math.round(rating)
-  return (
-    <span className="inline-flex items-center gap-[3px]" aria-label={`${rating} out of 5`}>
-      {[0, 1, 2, 3, 4].map((i) => (
-        <Star
-          key={i}
-          className={`${className} ${i < rounded ? 'fill-[var(--slot4-accent)] text-[var(--slot4-accent)]' : 'fill-[var(--editable-border)] text-[var(--editable-border)]'}`}
-        />
-      ))}
-    </span>
-  )
-}
-
-function RatingRow({ post }: { post: SitePost }) {
-  const rating = ratingOf(post)
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <Stars rating={rating} className="h-4 w-4" />
-      <span className="text-sm font-semibold text-[var(--slot4-page-text)]">{rating.toFixed(1)}</span>
-      <span className="text-sm text-[var(--slot4-muted-text)]">({reviewsOf(post)})</span>
-    </div>
-  )
-}
-
-const container = 'mx-auto w-full max-w-[var(--editable-container)] px-4 sm:px-6 lg:px-8'
-
-/* ----------------------------- Hero banner ----------------------------- */
-// Latest posts' real images (newest first, deduped, placeholders dropped).
-function latestPostImages(posts: SitePost[], max = 8) {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const post of posts) {
-    const img = getEditablePostImage(post)
-    if (!img || img.includes('placeholder') || seen.has(img)) continue
-    seen.add(img)
-    out.push(img)
-    if (out.length >= max) break
-  }
-  return out
-}
-
-// Merge the primary feed with the time-window feeds so home always has content,
-// even when one source comes back empty for this site.
-function dedupePosts(posts: SitePost[]) {
-  const seen = new Set<string>()
-  const out: SitePost[] = []
-  for (const post of posts) {
+function safePosts(posts: SitePost[], timeSections: HomeTimeSection[]) {
+  const unique = new Map<string, SitePost>()
+  for (const post of [...posts, ...timeSections.flatMap((section) => section.posts)]) {
     const key = post.slug || post.id || post.title
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push(post)
+    if (key && !unique.has(key)) unique.set(key, post)
   }
-  return out
+  return [...unique.values()]
 }
 
-export function EditableHomeHero({ primaryTask, primaryRoute, posts, timeSections }: HomeSectionProps) {
-  const pool = dedupePosts([...posts, ...timeSections.flatMap((section) => section.posts)])
-  const heroImages = latestPostImages(pool)
-  const heroTitle = pagesContent.home.hero.title?.join(' ') || `Discover the best of ${SITE_CONFIG.name}`
-  const categories = SITE_CONFIG.tasks.filter((task) => task.enabled).slice(0, 6)
+function usableImages(posts: SitePost[]) {
+  return posts.map(getEditablePostImage).filter(Boolean).slice(0, 6)
+}
 
+export function EditableHomeHero({ posts, timeSections }: HomeSectionProps) {
+  const pool = safePosts(posts, timeSections)
   return (
-    <section className="relative">
-      <div className="relative h-[440px] w-full overflow-hidden sm:h-[520px] lg:h-[560px]">
-        <EditableHeroCollage images={heroImages} />
-        <div className="absolute inset-0 bg-black/25" />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.82)_0%,rgba(0,0,0,0.5)_45%,rgba(0,0,0,0.2)_100%)]" />
-        <div className={`relative flex h-full flex-col justify-center ${container}`}>
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">{pagesContent.home.hero.badge || 'Welcome'}</p>
-            <h1 className="mt-3 text-balance text-4xl font-extrabold leading-[1.05] tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl">
-              {heroTitle}
-            </h1>
-            <p className="mt-4 max-w-xl text-base text-white/90 sm:text-lg">{pagesContent.home.hero.description}</p>
+    <section className="relative isolate bg-[#171816] text-white">
+      <div className="relative min-h-[760px] overflow-hidden pb-36 pt-28 sm:min-h-[800px] sm:pt-32 lg:min-h-[760px]">
+        <EditableHeroCollage images={usableImages(pool)} />
+        <div className="absolute inset-0 bg-black/58" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(45,45,45,.15),rgba(0,0,0,.78))]" />
+        <div className={`relative z-10 flex flex-col items-center text-center ${container}`}>
+          <p className="mb-5 text-xs font-semibold uppercase tracking-[.24em] text-white/70">Business partner programme</p>
+          <h1 className="editable-display max-w-4xl text-balance text-4xl font-extrabold leading-[1.12] sm:text-5xl lg:text-[56px]">
+            Partner with {SITE_CONFIG.name} and<br className="hidden sm:block" /> grow your business
+          </h1>
+          <div className="mt-7 inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/45 px-5 py-3 text-left shadow-xl backdrop-blur-md">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2878f0]"><BadgePercent className="h-5 w-5" /></span>
+            <span>
+              <strong className="block text-sm">Free featured placement for new partners</strong>
+              <span className="block text-xs text-white/65">Available during your first month</span>
+            </span>
+          </div>
+          <Link href="/create" className="mt-8 rounded-xl bg-[#2878f0] px-9 py-4 text-base font-bold text-white shadow-[0_16px_36px_rgba(40,120,240,.32)] transition hover:-translate-y-1 hover:bg-[#1467df]">
+            Register your business
+          </Link>
+        </div>
+      </div>
 
-            <form action="/search" className="mt-7 flex w-full max-w-xl overflow-hidden rounded-full bg-white shadow-[0_10px_40px_rgba(0,0,0,0.35)]">
-              <div className="flex flex-1 items-center gap-2.5 px-5">
-                <Search className="h-5 w-5 shrink-0 text-[var(--slot4-muted-text)]" />
-                <input
-                  name="q"
-                  placeholder="Search posts, places, topics…"
-                  className="w-full bg-transparent py-4 text-sm text-[var(--slot4-page-text)] outline-none placeholder:text-[var(--slot4-muted-text)]"
-                />
-              </div>
-              <button className="shrink-0 bg-[var(--slot4-accent)] px-6 text-sm font-bold text-white transition hover:brightness-95 sm:px-8">
-                Search
-              </button>
-            </form>
-
-            <div className="mt-6 flex flex-wrap gap-2.5">
-              {categories.map((task) => (
-                <Link
-                  key={task.key}
-                  href={task.route}
-                  className="rounded-full border border-white/30 bg-white/10 px-4 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
-                >
-                  {task.label}
-                </Link>
+      <div className={`relative z-20 -mt-36 ${container}`}>
+        <div className="grid overflow-hidden rounded-2xl bg-white p-6 text-[#172033] shadow-[0_18px_50px_rgba(16,24,40,.18)] sm:p-8 lg:grid-cols-[1.4fr_.8fr] lg:gap-10">
+          <div>
+            <h2 className="editable-display text-2xl font-extrabold">Get started: it only takes 10 minutes</h2>
+            <p className="mt-1 text-sm text-[#78849a]">Keep these details ready for a smooth business registration.</p>
+            <div className="mt-7 grid gap-x-8 gap-y-4 text-sm font-semibold sm:grid-cols-2">
+              {[
+                'Business or personal identity',
+                'Contact and location details',
+                'Service or menu information',
+                'Business profile images',
+                'Payment details, when applicable',
+              ].map((item) => (
+                <span key={item} className="flex items-center gap-2.5">
+                  <Check className="h-5 w-5 rounded-full bg-[#30b663] p-1 text-white" />{item}
+                </span>
               ))}
             </div>
           </div>
-        </div>
-        {heroImages.length ? (
-          <p className="absolute bottom-4 left-4 text-xs font-medium text-white/70 sm:left-8">Latest on {SITE_CONFIG.name}</p>
-        ) : null}
-      </div>
-      {/* Quick stat strip under hero (Yelp-like trust band) */}
-      <div className="border-b border-[var(--editable-border)] bg-[var(--slot4-surface-bg)]">
-        <div className={`flex flex-wrap items-center justify-center gap-x-10 gap-y-2 py-4 text-sm text-[var(--slot4-muted-text)] ${container}`}>
-          <span className="inline-flex items-center gap-2"><Star className="h-4 w-4 fill-[var(--slot4-accent)] text-[var(--slot4-accent)]" /> Trusted reviews</span>
-          <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-[var(--slot4-accent)]" /> Local discovery</span>
-          <span className="hidden items-center gap-2 sm:inline-flex"><ThumbsUp className="h-4 w-4 text-[var(--slot4-accent)]" /> Updated daily</span>
-          <Link href={primaryRoute} className="inline-flex items-center gap-1 font-semibold text-[var(--slot4-accent)] hover:underline">
-            Browse {taskLabel(primaryTask).toLowerCase()} <ChevronRight className="h-4 w-4" />
-          </Link>
+          <div className="mt-8 flex min-h-36 items-center rounded-xl bg-[#eef4ff] p-5 lg:mt-0">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#2878f0] text-white"><Store className="h-6 w-6" /></div>
+            <div className="ml-4">
+              <p className="text-xs font-bold uppercase tracking-[.16em] text-[#2878f0]">Partner onboarding</p>
+              <h3 className="mt-1 font-bold">Build a complete profile customers can trust.</h3>
+              <Link href="/create" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-[#2878f0]">Start now <ArrowRight className="h-4 w-4" /></Link>
+            </div>
+          </div>
         </div>
       </div>
     </section>
   )
 }
 
-/* -------------------------- Browse by category -------------------------- */
 export function EditableStoryRail({ primaryRoute }: HomeSectionProps) {
-  const categories = SITE_CONFIG.tasks.filter((task) => task.enabled)
-  if (!categories.length) return null
+  const benefits = [
+    { icon: Users, title: 'Attract new customers', body: 'Reach people actively searching for trusted local businesses and useful services.' },
+    { icon: Store, title: 'Simple business discovery', body: 'Present your details, services, images, and contact information in one useful profile.' },
+    { icon: Mail, title: 'Onboarding support', body: 'Get practical help from our team while preparing and publishing your business page.' },
+  ]
   return (
-    <section className="bg-[var(--slot4-surface-bg)]">
-      <div className={`py-12 sm:py-14 ${container}`}>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-extrabold tracking-[-0.01em] sm:text-3xl">Browse by category</h2>
-            <p className="mt-2 text-[var(--slot4-muted-text)]">Jump straight to what you’re looking for.</p>
-          </div>
-          <Link href={primaryRoute} className="hidden items-center gap-1 text-sm font-semibold text-[var(--slot4-accent)] hover:underline sm:inline-flex">
-            See all <ArrowRight className="h-4 w-4" />
-          </Link>
+    <section className="bg-white py-20 sm:py-24">
+      <div className={container}>
+        <div className="flex items-center gap-5">
+          <span className="h-px flex-1 bg-[#b8c0cf]" />
+          <h2 className="editable-display text-center text-2xl font-extrabold sm:text-4xl">Why should you partner with {SITE_CONFIG.name}?</h2>
+          <span className="h-px flex-1 bg-[#b8c0cf]" />
         </div>
-        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {categories.map((task) => {
-            const Icon = taskIcon[task.key] || FileText
-            return (
-              <Link
-                key={task.key}
-                href={task.route}
-                className="group flex flex-col items-center gap-3 rounded-xl border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] px-3 py-6 text-center transition duration-300 hover:-translate-y-1 hover:border-[var(--slot4-accent)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.10)]"
-              >
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--slot4-accent-soft)] text-[var(--slot4-accent)] transition group-hover:scale-105">
-                  <Icon className="h-6 w-6" />
-                </span>
-                <span className="text-sm font-semibold text-[var(--slot4-page-text)]">{task.label}</span>
-              </Link>
+        <div className="mt-14 grid gap-12 md:grid-cols-3">
+          {benefits.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="text-center">
+              <Icon className="mx-auto h-11 w-11 stroke-[1.8] text-[#2878f0]" />
+              <h3 className="editable-display mt-7 text-xl font-bold">{title}</h3>
+              <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-[#667085]">{body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-12 text-center">
+          <Link href={primaryRoute} className="inline-flex items-center gap-2 text-sm font-bold text-[#2878f0]">Explore partner profiles <ArrowRight className="h-4 w-4" /></Link>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export function EditableMagazineSplit({ primaryTask, primaryRoute, posts, timeSections }: HomeSectionProps) {
+  const real = safePosts(posts, timeSections).slice(0, 3)
+  const fallback = [
+    { title: 'A more visible local presence', text: `The platform gave our business a clearer online presence and made it easier for new customers to understand what we offer.`, name: 'Local business owner' },
+    { title: 'An easier way to be discovered', text: `Our profile brings our services, contact details, and latest updates together in one reliable place.`, name: 'Independent service provider' },
+    { title: 'Support that made a difference', text: `The onboarding process was straightforward, and the guidance helped us publish a polished business profile.`, name: 'Community partner' },
+  ]
+  const cards: StoryCard[] = real.length
+    ? real.map((post) => ({ title: getEditableCategory(post), text: getEditableExcerpt(post, 190), name: post.title, post }))
+    : fallback
+
+  return (
+    <section className="bg-[#edf4ff] py-20 sm:py-24">
+      <div className={container}>
+        <h2 className="editable-display text-center text-3xl font-extrabold sm:text-4xl">Business success stories</h2>
+        <div className="mt-12 grid gap-5 lg:grid-cols-3">
+          {cards.map((card, index) => {
+            const body = (
+              <article className="flex h-full min-h-60 flex-col rounded-2xl bg-white p-6 shadow-[0_10px_28px_rgba(39,72,122,.06)] transition hover:-translate-y-1 hover:shadow-xl">
+                <p className="text-sm leading-6 text-[#64704e]">{card.text}</p>
+                <div className="mt-auto border-t border-[#edf0f4] pt-5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#eaf0fa] text-sm font-extrabold text-[#2878f0]">{String(index + 1).padStart(2, '0')}</span>
+                    <div><h3 className="line-clamp-1 text-sm font-bold text-[#30394b]">{card.name}</h3><p className="mt-0.5 text-xs text-[#8a94a6]">{card.title}</p></div>
+                  </div>
+                </div>
+              </article>
             )
+            return card.post
+              ? <Link key={card.post.id || card.post.slug} href={postHref(primaryTask, card.post, primaryRoute)}>{body}</Link>
+              : <div key={card.name}>{body}</div>
           })}
         </div>
       </div>
@@ -234,164 +167,55 @@ export function EditableStoryRail({ primaryRoute }: HomeSectionProps) {
   )
 }
 
-/* ---------------------------- Recent activity --------------------------- */
-function ActivityCard({ post, href }: { post: SitePost; href: string }) {
-  const category = categoryOf(post)
-  const image = getEditablePostImage(post)
+export function EditableTimeCollections({ primaryTask, primaryRoute, posts, timeSections }: HomeSectionProps) {
+  const feed = safePosts(posts, timeSections).slice(0, 8)
+  if (!feed.length) return null
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_8px_28px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-3 px-4 pt-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--slot4-accent-soft)] text-[var(--slot4-accent)]">
-          <Camera className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--slot4-page-text)]">{category || 'New post'}</p>
+    <section className="overflow-hidden bg-white py-20">
+      <div className={container}>
+        <div className="flex items-end justify-between gap-5">
+          <div><p className="text-xs font-bold uppercase tracking-[.2em] text-[#2878f0]">Latest discoveries</p><h2 className="editable-display mt-2 text-3xl font-extrabold">Explore our partner community</h2></div>
+          <Link href={primaryRoute} className="hidden items-center gap-2 text-sm font-bold text-[#2878f0] sm:flex">View all <ArrowRight className="h-4 w-4" /></Link>
         </div>
-      </div>
-      <Link href={href} className="group mt-3 block">
-        <div className="relative aspect-[3/2] overflow-hidden bg-[var(--slot4-media-bg)]">
-          <img src={image} alt={post.title} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]" loading="lazy" />
-        </div>
-      </Link>
-      <div className="flex flex-1 flex-col px-4 py-4">
-        <Link href={href} className="text-lg font-bold leading-snug tracking-[-0.01em] text-[var(--slot4-page-text)] hover:text-[var(--slot4-accent)]">
-          {post.title}
-        </Link>
-        <RatingRow post={post} />
-        <p className="mt-2 line-clamp-2 flex-1 text-sm leading-6 text-[var(--slot4-muted-text)]">{getExcerpt(post, 140)}</p>
-        <Link href={href} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--slot4-accent)] hover:underline">
-          Read more
-        </Link>
-      </div>
-      <div className="flex items-center gap-6 border-t border-[var(--editable-border)] px-4 py-3 text-[var(--slot4-muted-text)]">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium"><ThumbsUp className="h-4 w-4" /> Helpful</span>
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium"><MessageSquare className="h-4 w-4" /> Comment</span>
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium"><Share2 className="h-4 w-4" /> Share</span>
-      </div>
-    </article>
-  )
-}
-
-export function EditableMagazineSplit({ primaryTask, primaryRoute, posts, timeSections }: HomeSectionProps) {
-  const activity = dedupePosts([...posts, ...timeSections.flatMap((section) => section.posts)]).slice(0, 9)
-  if (!activity.length) return null
-  return (
-    <section className="bg-[var(--slot4-warm)]">
-      <div className={`py-14 sm:py-16 ${container}`}>
-        <div className="text-center">
-          <h2 className="text-3xl font-extrabold tracking-[-0.01em] sm:text-4xl">Recent activity</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-[var(--slot4-muted-text)]">
-            The latest posts, reviews and finds from across {SITE_CONFIG.name}.
-          </p>
-        </div>
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {activity.map((post) => (
-            <ActivityCard key={post.id || post.slug} post={post} href={postHref(primaryTask, post, primaryRoute)} />
+        <div className="mt-9 flex snap-x gap-5 overflow-x-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {feed.map((post) => (
+            <Link key={post.id || post.slug} href={postHref(primaryTask, post, primaryRoute)} className="group w-[280px] shrink-0 snap-start overflow-hidden rounded-2xl border border-[#e4e7ec] bg-white transition hover:-translate-y-1 hover:shadow-xl sm:w-[320px]">
+              <div className="aspect-[16/10] overflow-hidden bg-[#eef2f7]"><img src={getEditablePostImage(post)} alt={post.title || 'Business profile'} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /></div>
+              <div className="p-5"><span className="text-xs font-bold uppercase tracking-[.14em] text-[#2878f0]">{getEditableCategory(post)}</span><h3 className="mt-2 line-clamp-2 text-lg font-bold">{post.title || 'Community business'}</h3><p className="mt-2 line-clamp-2 text-sm leading-6 text-[#667085]">{getEditableExcerpt(post, 110)}</p></div>
+            </Link>
           ))}
-        </div>
-        <div className="mt-10 text-center">
-          <Link href={primaryRoute} className="inline-flex items-center gap-2 rounded-lg border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] px-6 py-3 text-sm font-bold text-[var(--slot4-page-text)] transition hover:border-[var(--slot4-accent)] hover:text-[var(--slot4-accent)]">
-            Show more activity <ChevronRight className="h-4 w-4" />
-          </Link>
         </div>
       </div>
     </section>
   )
 }
 
-/* --------------------- Time-based discovery sections -------------------- */
-function CompactCard({ post, href }: { post: SitePost; href: string }) {
-  const category = categoryOf(post)
-  const image = getEditablePostImage(post)
-  return (
-    <Link
-      href={href}
-      className="group flex flex-col overflow-hidden rounded-xl border border-[var(--editable-border)] bg-[var(--slot4-surface-bg)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_8px_28px_rgba(0,0,0,0.12)]"
-    >
-      <div className="relative aspect-[3/2] overflow-hidden bg-[var(--slot4-media-bg)]">
-        <img src={image} alt={post.title} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]" loading="lazy" />
-        {category ? (
-          <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-[11px] font-bold text-[var(--slot4-page-text)] shadow-sm">{category}</span>
-        ) : null}
-      </div>
-      <div className="flex flex-1 flex-col p-4">
-        <h3 className="line-clamp-2 text-base font-bold leading-snug tracking-[-0.01em] text-[var(--slot4-page-text)] group-hover:text-[var(--slot4-accent)]">
-          {post.title}
-        </h3>
-        <RatingRow post={post} />
-        <p className="mt-2 line-clamp-2 flex-1 text-sm leading-6 text-[var(--slot4-muted-text)]">{getExcerpt(post, 110)}</p>
-      </div>
-    </Link>
-  )
-}
-
-const sectionCopy: Record<string, { eyebrow: string; title: string }> = {
-  spotlight: { eyebrow: 'Fresh this week', title: 'New in the last 7 days' },
-  browse: { eyebrow: 'Trending now', title: 'Popular this month' },
-  index: { eyebrow: 'Evergreen', title: 'From the archive' },
-}
-
-export function EditableTimeCollections({ primaryTask, primaryRoute, posts, timeSections }: HomeSectionProps) {
-  // Use the real time windows; fall back to slicing posts so the page stays full.
-  const sections =
-    timeSections.length > 0
-      ? timeSections
-      : ([
-          { key: 'spotlight', posts: posts.slice(0, 8), href: primaryRoute },
-          { key: 'browse', posts: posts.slice(8, 16), href: primaryRoute },
-          { key: 'index', posts: posts.slice(16, 24), href: primaryRoute },
-        ] as Pick<HomeTimeSection, 'key' | 'posts' | 'href'>[])
-
-  const visible = sections.filter((section) => section.posts.length)
-  if (!visible.length) return null
-
-  return (
-    <>
-      {visible.map((section, index) => {
-        const copy = sectionCopy[section.key] || { eyebrow: 'Discover', title: 'More to explore' }
-        return (
-          <section key={section.key} className={index % 2 === 0 ? 'bg-[var(--slot4-surface-bg)]' : 'bg-[var(--slot4-warm)]'}>
-            <div className={`py-12 sm:py-14 ${container}`}>
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--slot4-accent)]">{copy.eyebrow}</p>
-                  <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.01em] sm:text-3xl">{copy.title}</h2>
-                </div>
-                <Link href={section.href || primaryRoute} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[var(--slot4-accent)] hover:underline">
-                  See all <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-              <div className="mt-7 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {section.posts.slice(0, 8).map((post) => (
-                  <CompactCard key={post.id || post.slug} post={post} href={postHref(primaryTask, post, primaryRoute)} />
-                ))}
-              </div>
-            </div>
-          </section>
-        )
-      })}
-    </>
-  )
-}
-
-/* -------------------------------- CTA band ------------------------------ */
 export function EditableHomeCta() {
+  const faqs = [
+    ['What details do I need to publish a business profile?', 'Prepare your business name, description, contact details, location, service information, and clear profile images.'],
+    ['How long does it take for a profile to go live?', 'Most complete submissions can be reviewed quickly. Timing can vary when additional information or verification is required.'],
+    ['Is there a fee to create a listing?', 'Available options are shown clearly during registration so you can choose what suits your business.'],
+    ['How can I get help if I get stuck?', 'Use the contact page to reach our support team with questions about onboarding, editing, or managing your profile.'],
+    ['How do customers find my business?', 'Customers can discover profiles through search, categories, articles, and related recommendations across the site.'],
+    ['Can I update my business information later?', 'Yes. Signed-in members can manage their submitted content and keep important business information current.'],
+  ]
   return (
-    <section id="get-app" className="scroll-mt-24 bg-[var(--slot4-accent)]">
-      <div className={`flex flex-col items-center gap-6 py-16 text-center sm:py-20 ${container}`}>
-        <h2 className="max-w-2xl text-3xl font-extrabold tracking-[-0.01em] text-white sm:text-4xl">
-          Got something worth sharing?
-        </h2>
-        <p className="max-w-xl text-base text-white/90 sm:text-lg">
-          Add your business, post a listing, or share a story — and reach the {SITE_CONFIG.name} community.
-        </p>
-        <div className="flex flex-wrap justify-center gap-4">
-          <Link href="/create" className="inline-flex items-center gap-2 rounded-lg bg-white px-7 py-3 text-sm font-bold text-[var(--slot4-accent)] transition hover:brightness-95">
-            Create a post
-          </Link>
-          <Link href="/contact" className="inline-flex items-center gap-2 rounded-lg border border-white/60 px-7 py-3 text-sm font-bold text-white transition hover:bg-white/10">
-            Contact us
-          </Link>
+    <section className="bg-white py-20 sm:py-24">
+      <div className={container}>
+        <h2 className="editable-display text-center text-3xl font-extrabold sm:text-4xl">Frequently asked questions</h2>
+        <div className="mx-auto mt-16 max-w-6xl space-y-5">
+          {faqs.map(([question, answer]) => (
+            <details key={question} className="group rounded-2xl border border-[#e4e8ef] bg-white open:shadow-lg">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-5 px-5 py-5 text-sm font-semibold sm:px-7 sm:text-base">
+                {question}<ChevronDown className="h-5 w-5 shrink-0 text-[#9aabc0] transition group-open:rotate-180" />
+              </summary>
+              <p className="border-t border-[#edf0f4] px-5 py-5 text-sm leading-7 text-[#667085] sm:px-7">{answer}</p>
+            </details>
+          ))}
+        </div>
+        <div className="mt-14 flex flex-wrap justify-center gap-3">
+          <Link href="/create" className="inline-flex items-center gap-2 rounded-xl bg-[#2878f0] px-7 py-3.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#1467df]"><Building2 className="h-4 w-4" /> Register your business</Link>
+          <Link href="/contact" className="inline-flex items-center gap-2 rounded-xl border border-[#d8dee9] px-7 py-3.5 text-sm font-bold transition hover:border-[#2878f0] hover:text-[#2878f0]"><Headphones className="h-4 w-4" /> Contact support</Link>
         </div>
       </div>
     </section>
